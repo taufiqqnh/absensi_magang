@@ -283,7 +283,7 @@
                     $('#detail_date').text(row.find('td:nth-child(4)').text());
                     $('#detail_checkin').text(row.find('td:nth-child(5)').text());
                     $('#detail_checkout').text(row.find('td:nth-child(6)').text());
-                    $('#detail_status').text(row.find('td:nth-child(7) span').text());
+                    $('#detail_status').text(row.find('td:nth-child(9) span').text());
                     $('#detail_latitude').text(row.data('latitude') || '-');
                     $('#detail_longitude').text(row.data('longitude') || '-');
                     $('#detail_device').text(row.data('device') || '-');
