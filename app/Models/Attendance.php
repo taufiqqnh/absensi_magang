@@ -18,7 +18,8 @@ class Attendance extends Model
         'check_in',
         'check_out',
         'status',
-        'description'
+        'description',
+        'image',
     ];
 
     // relasi ke user

@@ -26,18 +26,20 @@ class AttendanceController extends Controller
         $request->validate([
             'user_id' => 'required|exists:users,id',
             'face_descriptor' => 'required|string',
-            // 'face_image' dihapus dari validasi karena Base64
+            'face_image' => 'required|file|image|mimes:jpg,jpeg,png|max:2048'
         ]);
 
         try {
             $faceImagePath = null;
 
-            if ($request->face_image) {
-                $imageData = preg_replace('#^data:image/\w+;base64,#i', '', $request->face_image);
-                $imageData = base64_decode($imageData);
+            // ✅ HANDLE FILE (BENER)
+            if ($request->hasFile('face_image')) {
+                $file = $request->file('face_image');
 
-                $fileName = 'faces/' . uniqid() . '_face.png';
-                Storage::disk('public')->put($fileName, $imageData);
+                $fileName = 'faces/' . uniqid() . '_face.' . $file->getClientOriginalExtension();
+
+                Storage::disk('public')->put($fileName, file_get_contents($file));
+
                 $faceImagePath = $fileName;
             }
 
@@ -54,8 +56,10 @@ class AttendanceController extends Controller
                 'message' => 'Face data saved successfully',
                 'path' => $faceImagePath
             ]);
+
         } catch (\Exception $e) {
-            Log::error('Face data save failed: '.$e->getMessage());
+            Log::error('Face data save failed: ' . $e->getMessage());
+
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to save face data',
@@ -175,12 +179,14 @@ class AttendanceController extends Controller
             'office_id' => 'required|exists:tb_office,id',
             'device_name' => 'nullable|string',
             'latitude' => 'required|numeric',
-            'longitude' => 'required|numeric'
+            'longitude' => 'required|numeric',
+            'image' => 'nullable|string' // 🔥 TAMBAHAN
         ]);
 
         $today = Carbon::today('Asia/Jakarta')->toDateString();
 
         try {
+
             // =====================
             // Cek absensi hari ini
             // =====================
@@ -196,10 +202,10 @@ class AttendanceController extends Controller
             }
 
             // =====================
-            // Ambil data kantor & location
+            // Ambil data kantor
             // =====================
             $office = Office::findOrFail($request->office_id);
-            $officeLocation = $office->location; // pastikan relasi hasOne di Office.php
+            $officeLocation = $office->location;
 
             if (!$officeLocation) {
                 return response()->json([
@@ -210,27 +216,12 @@ class AttendanceController extends Controller
 
             $officeLat = (float) $officeLocation->latitude;
             $officeLng = (float) $officeLocation->longitude;
-            $officeRadius = max((int) $officeLocation->radius, 5); // minimal 5 m
+            $officeRadius = max((int) $officeLocation->radius, 5);
 
-            // =====================
-            // Hitung jarak Haversine
-            // =====================
             $userLat = (float) $request->latitude;
             $userLng = (float) $request->longitude;
 
             $distance = $this->haversineDistance($userLat, $userLng, $officeLat, $officeLng);
-
-            // =====================
-            // Debug log
-            // =====================
-            Log::info('Check-in debug', [
-                'userLat' => $userLat,
-                'userLng' => $userLng,
-                'officeLat' => $officeLat,
-                'officeLng' => $officeLng,
-                'distance' => $distance,
-                'officeRadius' => $officeRadius
-            ]);
 
             // =====================
             // Cek radius
@@ -238,12 +229,29 @@ class AttendanceController extends Controller
             if ($distance > $officeRadius) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'You are out of office radius (' . round($distance, 2) . 'm > ' . $officeRadius . 'm)'
+                    'message' => 'You are out of office radius (' . round($distance, 2) . 'm)'
                 ]);
             }
 
             // =====================
-            // Simpan / update device
+            // 🔥 SIMPAN IMAGE
+            // =====================
+            $imageName = null;
+
+            if ($request->image) {
+                $image = str_replace('data:image/png;base64,', '', $request->image);
+                $image = str_replace(' ', '+', $image);
+
+                $imageName = 'attendance_' . uniqid() . '.png';
+
+                Storage::disk('public')->put(
+                    'attendance/' . $imageName,
+                    base64_decode($image)
+                );
+            }
+
+            // =====================
+            // Device
             // =====================
             $device = null;
             $deviceName = $request->device_name ? substr($request->device_name, 0, 255) : null;
@@ -258,20 +266,22 @@ class AttendanceController extends Controller
             $device_id = $device ? $device->id : null;
 
             // =====================
-            // Tentukan status hadir/telat
+            // Status hadir / telat
             // =====================
             $workTime = OfficeWorkTime::where('office_id', $request->office_id)->first();
             $now = Carbon::now('Asia/Jakarta');
 
             $status = 'hadir';
+
             if ($workTime) {
                 $checkInTime = Carbon::parse($workTime->check_in_time, 'Asia/Jakarta');
                 $lateLimit = $checkInTime->copy()->addMinutes($workTime->late_tolerance ?? 0);
+
                 $status = $now->greaterThan($lateLimit) ? 'telat' : 'hadir';
             }
 
             // =====================
-            // Insert attendance
+            // INSERT DATA
             // =====================
             Attendance::create([
                 'id_users' => $request->user_id,
@@ -281,7 +291,8 @@ class AttendanceController extends Controller
                 'longitude' => $userLng,
                 'attendance_date' => $today,
                 'check_in' => $now->format('H:i:s'),
-                'status' => $status
+                'status' => $status,
+                'image' => $imageName // 🔥 SIMPAN FOTO
             ]);
 
             return response()->json([
@@ -295,7 +306,7 @@ class AttendanceController extends Controller
             Log::error('Check-in failed: '.$e->getMessage(), ['request' => $request->all()]);
             return response()->json([
                 'status' => false,
-                'message' => 'Check-in failed, see log'
+                'message' => 'Check-in failed'
             ]);
         }
     }
@@ -408,24 +419,32 @@ class AttendanceController extends Controller
     // ==============================
     // HALAMAN DATA ABSENSI
     // ==============================
-    public function indexAbsensidata()
-    {
-        $user = Auth::user();
+   public function indexAbsensidata(Request $request)
+{
+    $user = Auth::user();
 
-        // Cek jika role magang
-        if ($user->role == 'magang') {
-            $attendances = Attendance::with(['user', 'office', 'device'])
-                ->where('id_users', $user->id)
-                ->latest()
-                ->get();
-        } else {
-            $attendances = Attendance::with(['user', 'office', 'device'])
-                ->latest()
-                ->get();
-        }
+    // Ambil role dinamis dari tabel user
+    $roles = \App\Models\User::select('role')->distinct()->pluck('role');
 
-        return view('admin.attendance.index', compact('attendances'));
+    // Base query
+    $query = Attendance::with(['user', 'office', 'device']);
+
+    // Jika magang → hanya data sendiri
+    if ($user->role == 'magang') {
+        $query->where('id_users', $user->id);
     }
+
+    // 🔥 FILTER ROLE (untuk admin/pimpinan)
+    if ($request->role) {
+        $query->whereHas('user', function ($q) use ($request) {
+            $q->where('role', $request->role);
+        });
+    }
+
+    $attendances = $query->latest()->get();
+
+    return view('admin.attendance.index', compact('attendances', 'roles'));
+}
 
     // ==============================
     // DELETE ABSENSI

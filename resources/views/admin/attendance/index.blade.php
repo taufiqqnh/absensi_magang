@@ -35,9 +35,12 @@
                                 <div class="col-md-2">
                                     <select name="role" class="form-control">
                                         <option value="">Semua Role</option>
-                                        <option value="admin">Admin</option>
-                                        <option value="staff">Staff</option>
-                                        <option value="magang">Magang</option>
+                                        @foreach ($roles as $role)
+                                            <option value="{{ $role }}"
+                                                {{ request('role') == $role ? 'selected' : '' }}>
+                                                {{ ucfirst($role) }}
+                                            </option>
+                                        @endforeach
                                     </select>
                                 </div>
 
@@ -76,6 +79,8 @@
                                         <th>Tanggal</th>
                                         <th>Check-in</th>
                                         <th>Check-out</th>
+                                        <th>Role</th>
+                                        <th>Image</th>
                                         <th>Status</th>
                                         <th>Action</th>
                                     </tr>
@@ -93,6 +98,16 @@
                                             <td>{{ $attendance->check_in ? \Carbon\Carbon::parse($attendance->check_in)->format('H:i:s') : '-' }}
                                             </td>
                                             <td>{{ $attendance->check_out ? \Carbon\Carbon::parse($attendance->check_out)->format('H:i:s') : '-' }}
+                                            </td>
+                                            <td>{{ $attendance->user->role ?? '-' }}</td>
+                                            <td>
+                                                @if ($attendance->image)
+                                                    <img src="{{ asset('storage/attendance/' . $attendance->image) }}"
+                                                        width="100" class="preview-image" style="cursor:pointer"
+                                                        data-image="{{ asset('storage/attendance/' . $attendance->image) }}">
+                                                @else
+                                                    <span class="text-muted">No Image</span>
+                                                @endif
                                             </td>
                                             <td>
                                                 <span
@@ -211,6 +226,21 @@
                             </div>
                         </div>
 
+                        {{-- Image Preview Modal --}}
+                        <div class="modal fade" id="imagePreviewModal" tabindex="-1">
+                            <div class="modal-dialog modal-dialog-centered modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Preview Image</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body text-center">
+                                        <img id="previewImage" src="" class="img-fluid rounded">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -220,6 +250,13 @@
     @push('scripts')
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <script>
+            // Preview Image Click
+            $(document).on('click', '.preview-image', function() {
+                let imgSrc = $(this).data('image');
+
+                $('#previewImage').attr('src', imgSrc);
+                $('#imagePreviewModal').modal('show');
+            });
             $(document).ready(function() {
                 $('#attendance-table').DataTable();
 
