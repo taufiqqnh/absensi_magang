@@ -71,127 +71,25 @@ class AttendanceController extends Controller
         }
     }
 
-    // ================================
-    // CHECK IN
-    // ================================
-    // public function checkIn(Request $request)
-    // {
-    //     $request->validate([
-    //         'user_id' => 'required|exists:users,id',
-    //         'office_id' => 'required|exists:tb_office,id',
-    //         'device_name' => 'nullable|string',
-    //         'latitude' => 'required|numeric',
-    //         'longitude' => 'required|numeric'
-    //     ]);
 
-    //     $today = Carbon::today('Asia/Jakarta')->toDateString();
-
-    //     try {
-    //         // =====================
-    //         // Cek absensi hari ini
-    //         // =====================
-    //         $attendance = Attendance::where('id_users', $request->user_id)
-    //             ->where('attendance_date', $today)
-    //             ->first();
-
-    //         if ($attendance) {
-    //             return response()->json([
-    //                 'status' => false,
-    //                 'message' => 'Already checked in today'
-    //             ]);
-    //         }
-
-    //         // =====================
-    //         // Simpan / update device
-    //         // =====================
-    //         $device = null;
-    //         $deviceName = $request->device_name ? substr($request->device_name, 0, 255) : null; // aman untuk DB
-
-    //         if ($deviceName) {
-    //             $device = Device::updateOrCreate(
-    //                 ['user_id' => $request->user_id, 'device_name' => $deviceName],
-    //                 ['ip_address' => $request->ip()]
-    //             );
-    //         }
-
-    //         $device_id = $device ? $device->id : null;
-
-    //         // =====================
-    //         // Tentukan status hadir/telat
-    //         // =====================
-    //         $workTime = OfficeWorkTime::where('office_id', $request->office_id)->first();
-    //         $now = Carbon::now('Asia/Jakarta');
-
-    //         if ($workTime) {
-    //             $checkInTime = Carbon::parse($workTime->check_in_time, 'Asia/Jakarta');
-    //             $lateLimit = $checkInTime->copy()->addMinutes($workTime->late_tolerance ?? 0);
-    //             $status = $now->greaterThan($lateLimit) ? 'telat' : 'hadir';
-    //         } else {
-    //             $status = 'hadir';
-    //         }
-
-    //         // =====================
-    //         // Logging untuk debugging
-    //         // =====================
-    //         Log::info('Check-in data', [
-    //             'user_id' => $request->user_id,
-    //             'office_id' => $request->office_id,
-    //             'device_id' => $device_id,
-    //             'latitude' => $request->latitude,
-    //             'longitude' => $request->longitude,
-    //             'today' => $today,
-    //             'status' => $status,
-    //             'current_time' => $now->toDateTimeString(),
-    //             'check_in_time' => $workTime->check_in_time ?? null,
-    //             'late_tolerance' => $workTime->late_tolerance ?? null
-    //         ]);
-
-    //         // =====================
-    //         // Insert attendance
-    //         // =====================
-    //         Attendance::create([
-    //             'id_users' => $request->user_id,
-    //             'office_id' => $request->office_id,
-    //             'device_id' => $device_id,
-    //             'latitude' => (float)$request->latitude,
-    //             'longitude' => (float)$request->longitude,
-    //             'attendance_date' => $today,
-    //             'check_in' => $now->format('H:i:s'),
-    //             'status' => $status
-    //         ]);
-
-    //         return response()->json([
-    //             'status' => true,
-    //             'message' => 'Check-in successful',
-    //             'attendance_status' => $status
-    //         ]);
-
-    //     } catch (\Exception $e) {
-    //         Log::error('Check-in failed: '.$e->getMessage(), ['request' => $request->all()]);
-    //         return response()->json([
-    //             'status' => false,
-    //             'message' => 'Check-in failed, see log'
-    //         ]);
-    //     }
-    // }
 
     public function getFaceData($user_id)
-{
-    $face = FaceData::where('id_users', $user_id)->first();
+    {
+        $face = FaceData::where('id_users', $user_id)->first();
 
-    if (!$face) {
+        if (!$face) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Face not found'
+            ]);
+        }
+
         return response()->json([
-            'status' => false,
-            'message' => 'Face not found'
+            'status' => true,
+            'face_descriptor' => $face->face_descriptor,
+            'face_image' => $face->face_image
         ]);
     }
-
-    return response()->json([
-        'status' => true,
-        'face_descriptor' => $face->face_descriptor,
-        'face_image' => $face->face_image
-    ]);
-}
 
     public function checkIn(Request $request)
     {
