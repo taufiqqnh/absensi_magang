@@ -25,20 +25,24 @@ class AttendanceController extends Controller
     {
         $request->validate([
             'user_id' => 'required|exists:users,id',
-            'face_descriptor' => 'required|string',
-            'face_image' => 'required|file|image|mimes:jpg,jpeg,png|max:2048'
+            'face_image' => 'required|file|image|mimes:jpg,jpeg,png|max:2048',
+            'face_descriptor' => 'nullable'
         ]);
 
         try {
+
             $faceImagePath = null;
 
-            // ✅ HANDLE FILE (BENER)
             if ($request->hasFile('face_image')) {
+
                 $file = $request->file('face_image');
 
-                $fileName = 'faces/' . uniqid() . '_face.' . $file->getClientOriginalExtension();
+                $fileName = 'faces/' . uniqid() . '_face.png';
 
-                Storage::disk('public')->put($fileName, file_get_contents($file));
+                Storage::disk('public')->put(
+                    $fileName,
+                    file_get_contents($file)
+                );
 
                 $faceImagePath = $fileName;
             }
@@ -46,25 +50,24 @@ class AttendanceController extends Controller
             FaceData::updateOrCreate(
                 ['id_users' => $request->user_id],
                 [
-                    'face_descriptor' => $request->face_descriptor,
-                    'face_image' => $faceImagePath
+                    'face_image' => $faceImagePath,
+                    'face_descriptor' => $request->face_descriptor ?? null
                 ]
             );
 
             return response()->json([
                 'status' => true,
-                'message' => 'Face data saved successfully',
+                'message' => 'Face saved successfully',
                 'path' => $faceImagePath
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Face data save failed: ' . $e->getMessage());
 
             return response()->json([
                 'status' => false,
-                'message' => 'Failed to save face data',
-                'error' => $e->getMessage()
-            ]);
+                'message' => $e->getMessage(),
+                'line' => $e->getLine()
+            ], 500);
         }
     }
 
@@ -171,6 +174,24 @@ class AttendanceController extends Controller
     //         ]);
     //     }
     // }
+
+    public function getFaceData($user_id)
+{
+    $face = FaceData::where('id_users', $user_id)->first();
+
+    if (!$face) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Face not found'
+        ]);
+    }
+
+    return response()->json([
+        'status' => true,
+        'face_descriptor' => $face->face_descriptor,
+        'face_image' => $face->face_image
+    ]);
+}
 
     public function checkIn(Request $request)
     {

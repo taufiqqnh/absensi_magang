@@ -17,6 +17,7 @@
         </div>
 
         <div class="row">
+
             <!-- Update Profile -->
             <div class="col-md-6 grid-margin stretch-card">
                 <div class="card">
@@ -38,6 +39,7 @@
                     </div>
                 </div>
             </div>
+
         </div>
 
         <!-- FACE REGISTRATION -->
@@ -51,6 +53,7 @@
 
                         <div class="row">
                             <div class="col-md-6 text-center">
+
                                 <video id="video" width="100%" height="300" autoplay muted playsinline
                                     class="border rounded"></video>
 
@@ -60,13 +63,15 @@
                             </div>
 
                             <div class="col-md-6 text-center">
-                                <canvas id="canvas" width="300" height="300" style="display:none;"></canvas>
 
-                                <img id="preview" width="300" class="border rounded mb-2" style="display:none;">
+                                <canvas id="canvas" style="display:none;"></canvas>
+
+                                <img id="preview" width="300" class="border rounded mb-2" style="display:none;" />
 
                                 <button class="btn btn-success" id="saveBtn">
                                     Save Face
                                 </button>
+
                             </div>
                         </div>
 
@@ -81,14 +86,45 @@
 
     @push('scripts')
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="assets/js/face-api.min.js"></script>
 
         <script>
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
             const preview = document.getElementById('preview');
 
+            const captureBtn = document.getElementById('captureBtn');
+            const saveBtn = document.getElementById('saveBtn');
+
+            let capturedBlob = null;
+            let faceDescriptor = null;
+            let modelsLoaded = false;
+
+
             // =========================
-            // START CAMERA (FIX)
+            // LOAD MODEL FACE API
+            // =========================
+            async function loadModels() {
+                try {
+                    await Promise.all([
+                        faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+                        faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+                        faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+                    ]);
+
+                    modelsLoaded = true;
+                    console.log("Face API Ready");
+
+                } catch (err) {
+                    Swal.fire('Error', 'Model gagal load: ' + err.message, 'error');
+                }
+            }
+
+            loadModels();
+
+
+            // =========================
+            // START CAMERA
             // =========================
             async function startCamera() {
                 try {
@@ -101,6 +137,7 @@
 
                     video.srcObject = stream;
                     await video.play();
+
                 } catch (err) {
                     console.error(err);
                     Swal.fire('Error', 'Kamera tidak bisa diakses', 'error');
@@ -109,59 +146,112 @@
 
             startCamera();
 
+
             // =========================
-            // CAPTURE
+            // CAPTURE + FACE DETECTION
             // =========================
-            document.getElementById('captureBtn').onclick = () => {
+            captureBtn.addEventListener('click', async () => {
+
                 const ctx = canvas.getContext('2d');
 
-                canvas.style.display = 'block';
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
 
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                preview.src = canvas.toDataURL('image/png');
+                const base64 = canvas.toDataURL('image/png');
+
+                preview.src = base64;
                 preview.style.display = 'block';
-            };
+
+                // convert blob
+                capturedBlob = await fetch(base64).then(res => res.blob());
+
+
+                // =========================
+                // AMBIL FACE DESCRIPTOR
+                // =========================
+                if (!modelsLoaded) {
+                    Swal.fire('Tunggu', 'Model belum siap', 'warning');
+                    return;
+                }
+
+                const detection = await faceapi
+                    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({
+                        inputSize: 512,
+                        scoreThreshold: 0.3
+                    }))
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+                if (!detection) {
+                    Swal.fire('Error', 'Wajah tidak terdeteksi', 'error');
+                    return;
+                }
+
+                faceDescriptor = detection.descriptor;
+
+                console.log("Face Descriptor:", faceDescriptor);
+            });
+
 
             // =========================
-            // SAVE FACE (FIX BASE64)
+            // SAVE FACE
             // =========================
-            document.getElementById('saveBtn').onclick = async () => {
+            saveBtn.addEventListener('click', async () => {
 
-                if (!preview.src) {
+                if (!capturedBlob) {
                     Swal.fire('Error', 'Capture wajah dulu', 'error');
                     return;
                 }
 
-                // 🔥 convert base64 -> blob
-                const res = await fetch(preview.src);
-                const blob = await res.blob();
+                if (!faceDescriptor) {
+                    Swal.fire('Error', 'Face tidak terdeteksi, ulang capture', 'error');
+                    return;
+                }
 
-                const formData = new FormData();
-                formData.append('user_id', document.getElementById('user_id').value);
-                formData.append('face_descriptor', btoa(preview.src)); // sementara
-                formData.append('face_image', blob, 'face.png'); // 🔥 FILE
+                saveBtn.disabled = true;
+                saveBtn.innerText = 'Saving...';
 
-                fetch('/face-register', {
+                try {
+
+                    const formData = new FormData();
+
+                    formData.append('user_id', document.getElementById('user_id').value);
+
+                    // IMAGE
+                    formData.append('face_image', capturedBlob, 'face.png');
+
+                    // FACE DESCRIPTOR (INI PENTING 🔥)
+                    formData.append(
+                        'face_descriptor',
+                        JSON.stringify(Array.from(faceDescriptor))
+                    );
+
+                    const response = await fetch('/face-register', {
                         method: 'POST',
                         headers: {
                             'X-CSRF-TOKEN': '{{ csrf_token() }}'
                         },
                         body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        Swal.fire(
-                            data.status ? 'Success' : 'Error',
-                            data.message,
-                            data.status ? 'success' : 'error'
-                        );
-                    })
-                    .catch(err => {
-                        console.error(err);
-                        Swal.fire('Error', 'Server error', 'error');
                     });
-            };
+
+                    const data = await response.json();
+
+                    Swal.fire(
+                        data.status ? 'Success' : 'Error',
+                        data.message,
+                        data.status ? 'success' : 'error'
+                    );
+
+                } catch (err) {
+                    console.error(err);
+                    Swal.fire('Error', err.message, 'error');
+                }
+
+                saveBtn.disabled = false;
+                saveBtn.innerText = 'Save Face';
+            });
         </script>
     @endpush
 

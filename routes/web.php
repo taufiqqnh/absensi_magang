@@ -33,24 +33,21 @@ Route::middleware('auth')->group(function () {
     Route::get('/worktime', [OfficeWorkTimeController::class, 'edit'])->name('office.worktime.edit');
     Route::put('/worktime', [OfficeWorkTimeController::class, 'update'])->name('office.worktime.update');
 
-    // Simpan face data
-    Route::post('/face-register', [AttendanceController::class, 'storeFace'])->name('face.register.store');
+    
+
+    Route::get('/get-face-data/{user_id}', [AttendanceController::class, 'getFaceData']);
 
     Route::get('/scan', function () {
         $office = \App\Models\Office::first(); // Ambil office default
         return view('admin.attendance.scan', compact('office'));
     })->name('attendance.scan');
 
-    // Route::post('/face-register', [AttendanceController::class, 'storeFace']);
-    // Route::post('/check-in', [AttendanceController::class, 'checkIn']);
-    // Route::post('/check-out', [AttendanceController::class, 'checkOut']);
-    // Route::get('/attendance-today/{user_id}', [AttendanceController::class, 'todayAttendance']);
 
     // Halaman scan absensi
-    Route::get('/scan', function () {
-        $office = \App\Models\Office::first(); // Ambil office default
-        return view('admin.attendance.scan', compact('office'));
-    })->name('attendance.scan');
+    // Route::get('/scan', function () {
+    //     $office = \App\Models\Office::first(); // Ambil office default
+    //     return view('admin.attendance.scan', compact('office'));
+    // })->name('attendance.scan');
 
     // Face register
     Route::post('/face-register', [AttendanceController::class, 'storeFace'])
